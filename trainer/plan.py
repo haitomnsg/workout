@@ -17,8 +17,12 @@ and every muscle gets about two sessions a week.
 Cycle: week 1 is a learning week (2 sets, lighter), weeks 2-7 build, week 8
 deloads (one set fewer, ~10% lighter), then it repeats.
 
+Away from your dumbbells (see locations.py) the same days, slots and set
+counts run with bodyweight moves from `NO_DUMBBELLS`, so the week keeps its
+shape wherever you train.
+
 `Slot.key` is stable: if you swap an exercise and keep the swap, the profile
-remembers it against the slot, not the day.
+remembers it against the slot (and the place), not the day.
 """
 from __future__ import annotations
 
@@ -26,7 +30,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 from . import equipment as eq
-from . import progression
+from . import locations, progression
 from .library import LIBRARY, Move, available, get
 from .profile import WEEKDAYS, kit as profile_kit, week_start, weekday_key
 from .session import work_sessions
@@ -154,6 +158,49 @@ MOBILITY_B = Day(
            "Optional: a 20-30 minute easy walk.", "Sleep 7-9 hours."),
 )
 
+# Bodyweight version of every slot, for days without the dumbbells. The first
+# move the place has kit for wins, so one table serves both "No dumbbells"
+# (chair and table) and "Just the floor". An empty tuple drops the slot.
+NO_DUMBBELLS: dict[str, tuple[str, ...]] = {
+    "ua.press": ("pushup",),
+    "ua.row": ("table_row_bent", "door_row"),
+    "ua.ohp": ("pike_pushup",),
+    "ua.pull": ("pullup_negative", "table_chin_row", "floor_pulldown"),
+    "ua.delts": ("prone_t_raise",),
+
+    "la.squat": ("bw_squat",),
+    "la.hinge": ("bw_sl_rdl",),
+    "la.lunge": ("bw_reverse_lunge",),
+    "la.glute": ("sl_hip_thrust", "sl_glute_bridge"),
+    "la.calf": ("bw_calf_raise",),
+    "la.core": ("plank",),
+
+    "ub.ohp": ("pike_pushup",),
+    "ub.row": ("table_row_bent", "door_row"),
+    "ub.push": ("decline_pushup", "pushup"),
+    "ub.pull": ("pullup_negative", "floor_pulldown"),
+    "ub.rear": ("prone_t_raise",),
+    "ub.fly": (),              # no bodyweight fly worth the time; Upper B already pushes twice
+
+    "lb.split": ("bw_bss", "bw_split_squat"),
+    "lb.hinge": ("towel_leg_curl",),
+    "lb.step": ("bw_step_up", "bw_reverse_lunge"),
+    "lb.glute": ("sl_hip_thrust", "sl_glute_bridge"),
+    "lb.calf": ("bw_calf_raise",),
+    "lb.core": ("hanging_knee_raise", "lying_leg_raise"),
+
+    "ac.curl": ("table_chin_row", "towel_curl"),
+    "ac.tri": ("bench_dip", "kneeling_triceps_ext"),
+    "ac.curl2": ("towel_curl",),
+    "ac.tri2": ("diamond_pushup",),
+    "ac.delts": ("pike_pushup",),
+    "ac.core": ("dead_bug",),
+    "ac.core2": ("side_plank",),
+}
+
+# Bodyweight sets tax the whole body less than loaded ones.
+AWAY_MAX_REST = 90
+
 TRAINING_DAYS = (UPPER_A, LOWER_A, UPPER_B, LOWER_B, ARMS_CORE)
 REST_DAYS = (MOBILITY_A, MOBILITY_B)
 DAYS: dict[str, Day] = {d.key: d for d in (*TRAINING_DAYS, *REST_DAYS)}
@@ -203,18 +250,52 @@ PHASE_TEXT = {
 
 # ---------------------------------------------------------------- building
 
-def resolve_move(slot: Slot, profile: dict) -> Move:
-    """The move for a slot: your kept swap if any, else the default, falling
-    back to an alternative when the kit for it is missing."""
-    equip = profile.get("equipment", {})
-    move = LIBRARY.get(profile.get("swaps", {}).get(slot.key, slot.move)) or get(slot.move)
-    if available(move, equip):
-        return move
+def location_of(profile: dict, location: str | None = None) -> str:
+    return locations.valid(location or profile.get("location"))
+
+
+def resolve_move(slot: Slot, profile: dict, location: str | None = None) -> Move | None:
+    """The move for a slot where you are training: your kept swap for that
+    place if any, else the program's choice, falling back to an alternative
+    when the kit for it is missing. None when the slot is dropped there."""
+    loc = location_of(profile, location)
+    equip = locations.equipment(profile, loc)
+    kept = LIBRARY.get(profile.get("swaps", {}).get(locations.swap_key(slot.key, loc), ""))
+    if kept and available(kept, equip):
+        return kept
+    choices = (slot.move,) if loc == "dumbbells" else NO_DUMBBELLS.get(slot.key, (slot.move,))
+    if not choices:
+        return None
+    for mid in choices:
+        if available(get(mid), equip):
+            return get(mid)
+    move = get(choices[0])
     for alt in (*move.easier, *move.similar, *move.harder):
         m = LIBRARY.get(alt)
         if m and available(m, equip):
             return m
     return move
+
+
+def day_moves(day: Day, profile: dict, location: str | None = None) -> list[tuple[Slot, Move]]:
+    """Each slot of a day with its move. Away from the dumbbells two slots
+    can land on the same move (both biceps slots on towel curls when there is
+    no table) -- the second is dropped rather than repeated."""
+    out: list[tuple[Slot, Move]] = []
+    seen: set[str] = set()
+    for slot in day.slots:
+        move = resolve_move(slot, profile, location)
+        if move is None or move.id in seen:
+            continue
+        seen.add(move.id)
+        out.append((slot, move))
+    return out
+
+
+def harder_options(move: Move, profile: dict, location: str | None = None) -> tuple[str, ...]:
+    """The move's harder variations that the place has kit for."""
+    equip = locations.equipment(profile, location_of(profile, location))
+    return tuple(h for h in move.harder if h in LIBRARY and available(LIBRARY[h], equip))
 
 
 def timed_item(move_id: str) -> dict:
@@ -223,11 +304,16 @@ def timed_item(move_id: str) -> dict:
 
 
 def build_exercise(slot: Slot, move: Move, profile: dict, phase: str,
-                   sets_log: list[dict] | None = None) -> dict:
+                   sets_log: list[dict] | None = None, location: str | None = None) -> dict:
     kit = profile_kit(profile)
-    lo, hi = slot.reps
+    loc = location_of(profile, location)
+    # Bodyweight moves carry their own range: a single-leg squat is not done
+    # for the 15-25 reps a bodyweight squat needs.
+    lo, hi = move.reps or slot.reps
+    rest = slot.rest if loc == "dumbbells" else min(slot.rest, AWAY_MAX_REST)
     history = work_sessions(move.id, sets_log)
-    target = progression.recommend(move, lo, hi, history, kit)
+    target = progression.recommend(move, lo, hi, history, kit,
+                                   harder=harder_options(move, profile, loc))
 
     n_sets = slot.sets
     weight = target.weight
@@ -256,7 +342,7 @@ def build_exercise(slot: Slot, move: Move, profile: dict, phase: str,
         "slot": slot.key,
         "default_move": slot.move,
         "move": move.id,
-        "rest": slot.rest,
+        "rest": rest,
         "sets": sets,
         "target": t,
         "first_time": not history,
@@ -264,28 +350,33 @@ def build_exercise(slot: Slot, move: Move, profile: dict, phase: str,
 
 
 def build_session(day: Day, profile: dict, today: date,
-                  sets_log: list[dict] | None = None) -> dict:
+                  sets_log: list[dict] | None = None, location: str | None = None) -> dict:
     week = program_week(profile, today)
     phase = phase_for(week)
+    loc = location_of(profile, location)
+    equip = locations.equipment(profile, loc)
     blocks: list[dict] = []
     if day.kind == "mobility":
         blocks.append({"type": "mobility", "title": day.title,
                        "items": [timed_item(m) for m in day.warmup
-                                 if available(get(m), profile.get("equipment", {}))]})
+                                 if available(get(m), equip)]})
     else:
         blocks.append({"type": "warmup", "title": "Warm-up",
-                       "items": [timed_item(m) for m in day.warmup]})
-        for slot in day.slots:
-            blocks.append(build_exercise(slot, resolve_move(slot, profile), profile,
-                                         phase, sets_log))
+                       "items": [timed_item(m) for m in day.warmup
+                                 if available(get(m), equip)]})
+        for slot, move in day_moves(day, profile, loc):
+            blocks.append(build_exercise(slot, move, profile, phase, sets_log, loc))
         blocks.append({"type": "cooldown", "title": "Cool-down",
-                       "items": [timed_item(m) for m in day.cooldown]})
+                       "items": [timed_item(m) for m in day.cooldown
+                                 if available(get(m), equip)]})
     session = {
         "day_key": day.key,
         "title": day.title,
         "focus": day.focus,
         "kind": day.kind,
         "date": today.isoformat(),
+        "location": loc,
+        "location_label": locations.LOCATIONS[loc]["label"],
         "week": week,
         "phase": phase,
         "phase_text": PHASE_TEXT[phase],
@@ -368,18 +459,19 @@ def missed_this_week(profile: dict, today: date, sessions_log: list[dict]) -> li
             and d["day_key"] not in done_keys]
 
 
-def day_summary(day: Day, profile: dict) -> dict:
+def day_summary(day: Day, profile: dict, location: str | None = None) -> dict:
     """Light description for the Plan page -- no progression maths."""
     return {
         "key": day.key, "title": day.title, "focus": day.focus, "kind": day.kind,
         "notes": list(day.notes),
-        "slots": [{"slot": s.key, "move": m.id, "sets": s.sets, "reps": list(s.reps),
-                   "rest": s.rest, "hold": m.hold, "per_side": m.per_side}
-                  for s in day.slots for m in (resolve_move(s, profile),)],
+        "slots": [{"slot": s.key, "move": m.id, "sets": s.sets,
+                   "reps": list(m.reps or s.reps), "rest": s.rest, "hold": m.hold,
+                   "per_side": m.per_side}
+                  for s, m in day_moves(day, profile, location)],
         "warmup": list(day.warmup), "cooldown": list(day.cooldown),
     }
 
 
 __all__ = ["DAYS", "TRAINING_DAYS", "REST_DAYS", "WEEKDAYS", "build_session", "day_for",
            "week_map", "week_overview", "missed_this_week", "program_week", "phase_for",
-           "day_summary", "resolve_move", "Slot", "Day"]
+           "day_summary", "resolve_move", "day_moves", "NO_DUMBBELLS", "Slot", "Day"]

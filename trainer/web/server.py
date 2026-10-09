@@ -22,8 +22,9 @@ from pathlib import Path
 
 from flask import Flask, abort, jsonify, request, send_file, send_from_directory
 
-from .. import catalog, equipment as eq, nutrition, plan as planner, progression, session
-from ..library import GROUPS, LIBRARY, get as get_move, options
+from .. import catalog, equipment as eq, locations, nutrition, plan as planner, progression
+from .. import session
+from ..library import GROUPS, LIBRARY, available, get as get_move, options
 from ..live import LiveTracker
 from ..pose import MODEL_DIR, MODEL_FILES
 from ..profile import (DEFAULT_PROFILE, kit as profile_kit, load_profile, update_profile,
@@ -100,12 +101,15 @@ def create_app(voice=None, clock=time.time, tick: bool = True) -> Flask:
         sets = session.load_sets()
         sessions = session.load_sessions()
         day = planner.day_for(prof, d)
-        plan = planner.build_session(day, prof, d, sets)
+        loc = planner.location_of(prof, request.args.get("location"))
+        plan = planner.build_session(day, prof, d, sets, loc)
         done_today = [s for s in sessions if s.get("date") == d.isoformat()
                       and s.get("status") in ("done", "partial")]
         return jsonify({
             "date": d.isoformat(),
             "weekday": d.strftime("%A"),
+            "location": loc,
+            "locations": locations.as_list(),
             "plan": expand_plan(plan),
             "week": planner.week_overview(prof, d, sessions),
             "missed": planner.missed_this_week(prof, d, sessions),
@@ -122,7 +126,8 @@ def create_app(voice=None, clock=time.time, tick: bool = True) -> Flask:
             abort(404)
         d = date.today()
         prof = load_profile()
-        plan = planner.build_session(planner.DAYS[key], prof, d, session.load_sets())
+        plan = planner.build_session(planner.DAYS[key], prof, d, session.load_sets(),
+                                     request.args.get("location"))
         return jsonify(expand_plan(plan))
 
     # ------------------------------------------------------------ plan
@@ -132,12 +137,13 @@ def create_app(voice=None, clock=time.time, tick: bool = True) -> Flask:
         d = date.today()
         prof = load_profile()
         kit = profile_kit(prof)
+        loc = planner.location_of(prof, request.args.get("location"))
         start = week_start(d)
         wm = planner.week_map(prof)
         days = []
         for i, wd in enumerate(["sun", "mon", "tue", "wed", "thu", "fri", "sat"]):
             day = wm[wd]
-            summary = planner.day_summary(day, prof)
+            summary = planner.day_summary(day, prof, loc)
             for s in summary["slots"]:
                 s["name"] = get_move(s["move"]).name
             summary["date"] = (start + timedelta(days=i)).isoformat()
@@ -150,6 +156,8 @@ def create_app(voice=None, clock=time.time, tick: bool = True) -> Flask:
                        "base": kit.dumbbell_handle if m != "bb" else kit.barbell_bar}
                    for m in ("db1", "db2", "bb")}
         return jsonify({
+            "location": loc, "current_location": planner.location_of(prof),
+            "locations": locations.as_list(),
             "days": days, "week": week, "phase": planner.phase_for(week),
             "phase_text": planner.PHASE_TEXT[planner.phase_for(week)],
             "cycle_week": (week - 1) % planner.CYCLE_WEEKS + 1,
@@ -163,12 +171,15 @@ def create_app(voice=None, clock=time.time, tick: bool = True) -> Flask:
 
     @app.get("/api/library")
     def library():
+        prof = load_profile()
+        kit_at = {loc: locations.equipment(prof, loc) for loc in locations.LOCATIONS}
         rows = [{"id": m.id, "name": m.name, "kind": m.kind, "group": m.group,
                  "group_label": GROUPS.get(m.group, m.group), "mode": m.mode,
                  "tracker": m.tracker, "slug": m.slug, "muscles": m.muscles,
-                 "per_side": m.per_side, "hold": m.hold, "needs": m.needs}
+                 "per_side": m.per_side, "hold": m.hold, "needs": m.needs,
+                 "places": [loc for loc, kit in kit_at.items() if available(m, kit)]}
                 for m in LIBRARY.values()]
-        return jsonify({"moves": rows, "groups": GROUPS})
+        return jsonify({"moves": rows, "groups": GROUPS, "locations": locations.as_list()})
 
     @app.get("/api/library/<move_id>")
     def library_item(move_id: str):
@@ -211,6 +222,7 @@ def create_app(voice=None, clock=time.time, tick: bool = True) -> Flask:
         prof = load_profile()
         kit = profile_kit(prof)
         return jsonify({"profile": prof, "defaults": DEFAULT_PROFILE,
+                        "locations": locations.as_list(), "kit_labels": locations.KIT_LABELS,
                         "ranges": {m: [eq.ladder(kit, m)[0], eq.ladder(kit, m)[-1]]
                                    for m in ("db1", "db2", "bb")},
                         "media_ok": catalog.MEDIA_ROOT.exists()})

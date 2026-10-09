@@ -24,7 +24,7 @@ from datetime import date, datetime
 
 from . import equipment as eq
 from . import plan as planner
-from . import progression, session
+from . import locations, progression, session
 from .library import get as get_move
 from .profile import ensure_program_start, kit as profile_kit, load_profile, save_profile
 
@@ -58,12 +58,17 @@ class Runner:
 
     # ================================================================ setup
 
-    def start(self, day_key: str | None = None) -> dict:
+    def start(self, day_key: str | None = None, location: str | None = None) -> dict:
         with self.lock:
             today = date.today()
-            profile = ensure_program_start(load_profile(), today)
+            profile = load_profile()
+            if location in locations.LOCATIONS and location != profile.get("location"):
+                profile["location"] = location        # remembered for next time
+                profile = save_profile(profile)
+            profile = ensure_program_start(profile, today)
             day = planner.DAYS[day_key] if day_key else planner.day_for(profile, today)
-            plan = planner.build_session(day, profile, today, session.load_sets())
+            plan = planner.build_session(day, profile, today, session.load_sets(),
+                                         profile["location"])
             now = self.clock()
             self.st = {
                 "id": f"{today.isoformat()}-{day.key}-{datetime.now():%H%M%S}",
@@ -82,7 +87,9 @@ class Runner:
                 "summary": None,
             }
             self._save()
-            self.voice.say(f"Today is {plan['title']}. {plan['focus']}. "
+            where = "" if plan["location"] == locations.DEFAULT_LOCATION else \
+                " Bodyweight version, no dumbbells."
+            self.voice.say(f"Today is {plan['title']}. {plan['focus']}.{where} "
                            f"About {plan['estimate_min']} minutes. Press space to begin.",
                            key="overview", force=True)
             return self.snapshot()
@@ -373,6 +380,7 @@ class Runner:
             "day_key": plan["day_key"],
             "title": plan["title"],
             "kind": plan["kind"],
+            "location": plan.get("location", locations.DEFAULT_LOCATION),
             "status": status,
             "week": plan["week"],
             "phase": plan["phase"],
@@ -457,7 +465,7 @@ class Runner:
             st = self.st
             if st is None:
                 if action == "start":
-                    return self.start(data.get("day"))
+                    return self.start(data.get("day"), data.get("location"))
                 raise ValueError("no active workout")
             handler = getattr(self, f"_a_{action}", None)
             if handler is None:
@@ -641,7 +649,8 @@ class Runner:
         if slot is None:
             return
         profile = load_profile()
-        rebuilt = planner.build_exercise(slot, new, profile, st["plan"]["phase"])
+        loc = st["plan"].get("location")
+        rebuilt = planner.build_exercise(slot, new, profile, st["plan"]["phase"], location=loc)
         # Sets already done stay in the block (and the log) as they were.
         n_done = step["set"] + 1 if step["t"] == "set" else 0
         done = b["sets"][:n_done]
@@ -666,7 +675,7 @@ class Runner:
         st["pos"] = len(before)
         st["advice"] = None
         if data.get("keep"):
-            profile["swaps"][b["slot"]] = new.id
+            profile["swaps"][locations.swap_key(b["slot"], loc)] = new.id
             save_profile(profile)
         self.live.cancel()
         self._configure_live()
@@ -722,9 +731,11 @@ class Runner:
                 "side": st.get("side", 1),
                 "pos": st["pos"],
                 "total_steps": len(st["steps"]),
-                "plan": {k: st["plan"][k] for k in ("title", "focus", "week", "phase",
-                                                    "phase_text", "estimate_min", "kind",
-                                                    "day_key", "notes")},
+                "plan": {**{k: st["plan"][k] for k in ("title", "focus", "week", "phase",
+                                                       "phase_text", "estimate_min", "kind",
+                                                       "day_key", "notes")},
+                         "location": st["plan"].get("location", locations.DEFAULT_LOCATION),
+                         "location_label": st["plan"].get("location_label", "")},
                 "outline": self._outline(),
                 "pending": st.get("pending"),
                 "advice": {k: v for k, v in (st.get("advice") or {}).items() if k != "original"}
@@ -787,7 +798,7 @@ class Runner:
         work = [s for s in b["sets"] if s["kind"] == "work"]
         view.update({"target": b["target"], "rest": b["rest"], "slot": b["slot"],
                      "first_time": b.get("first_time"),
-                     "options": self._options(m.id),
+                     "options": self._options(m.id, self.st["plan"].get("location")),
                      "sets": b["sets"],
                      "work_sets": len(work)})
         if step["t"] == "set":
@@ -806,8 +817,8 @@ class Runner:
         return view
 
     @staticmethod
-    def _options(move_id: str) -> dict:
+    def _options(move_id: str, location: str | None) -> dict:
         from .library import options
-        eqp = load_profile().get("equipment", {})
+        eqp = locations.equipment(load_profile(), location)
         return {k: [{"id": m.id, "name": m.name} for m in v]
                 for k, v in options(move_id, eqp).items()}

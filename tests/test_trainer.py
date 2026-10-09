@@ -348,6 +348,90 @@ def test_swap_and_skip() -> None:
     profile.save_profile(prof)
 
 
+# ------------------------------------------------------------- locations
+
+def test_locations() -> None:
+    print("\ntraining away from the dumbbells")
+    from trainer import locations
+    reset_data()
+    check("every slot has a bodyweight version",
+          set(planner.NO_DUMBBELLS) == set(planner.SLOTS), f"{set(planner.SLOTS) ^ set(planner.NO_DUMBBELLS)}")
+    check("bodyweight versions are real moves",
+          all(m in LIBRARY for ids in planner.NO_DUMBBELLS.values() for m in ids))
+
+    prof = profile.load_profile()
+    prof["program_start"] = "2026-09-06"
+    today = date(2026, 10, 5)
+    for loc in ("furniture", "floor"):
+        kit = locations.equipment(prof, loc)
+        for d in (*planner.TRAINING_DAYS, *planner.REST_DAYS):
+            s = planner.build_session(d, prof, today, [], loc)
+            moves = [get_move(b["move"]) for b in s["blocks"] if b["type"] == "exercise"]
+            items = [get_move(it["move"]) for b in s["blocks"] if b["type"] != "exercise"
+                     for it in b["items"]]
+            unusable = [m.id for m in (*moves, *items) if m.weighted or
+                        any(not kit.get(n, True) for n in m.needs)]
+            check(f"{loc}: {d.title} only uses what is there", not unusable, f"{unusable}")
+            if d.kind == "workout":
+                check(f"{loc}: {d.title} has 4+ exercises, ~{s['estimate_min']} min",
+                      len(moves) >= 4 and 30 <= s["estimate_min"] <= 62,
+                      f"{len(moves)} moves, {s['estimate_min']} min")
+                check(f"{loc}: {d.title} never repeats a move", len(moves) == len({m.id for m in moves}))
+                check(f"{loc}: {d.title} rests at most {planner.AWAY_MAX_REST}s",
+                      all(b["rest"] <= planner.AWAY_MAX_REST for b in s["blocks"]
+                          if b["type"] == "exercise"))
+    floor = planner.build_session(planner.UPPER_A, prof, today, [], "floor")
+    check("floor rows on a door when there is no table",
+          "door_row" in [b["move"] for b in floor["blocks"] if b["type"] == "exercise"])
+    check("home program is the default",
+          planner.resolve_move(planner.SLOTS["ua.press"], prof).id == "db_bench_press")
+    with_bar = {**prof, "away_kit": {"furniture": {"pullup_bar": True}}}
+    check("a pull-up bar at the away place is used",
+          planner.resolve_move(planner.SLOTS["ua.pull"], with_bar, "furniture").id == "pullup_negative")
+
+    # Graduation only offers a harder move the place can do.
+    top = [[{"reps": 15, "rating": "good", "date": "2026-10-01"}] * 3]
+    pushup = get_move("pushup")
+    for loc, want in (("furniture", "decline_pushup"), ("floor", "deficit_pushup"),
+                      ("dumbbells", "decline_pushup")):
+        t = progression.recommend(pushup, 8, 15, top, KIT,
+                                  harder=planner.harder_options(pushup, prof, loc))
+        check(f"push-up graduates to {want} at {loc}", t.graduate_to == want, f"{t.graduate_to}")
+    squat = get_move("bw_squat")
+    t = progression.recommend(squat, 15, 25, [[{"reps": 25, "rating": "good"}] * 3], KIT,
+                              harder=planner.harder_options(squat, prof, "furniture"))
+    check("bodyweight squat graduates to a one-leg squat, not a goblet squat",
+          t.graduate_to == "pistol_box", f"{t.graduate_to}")
+    t = progression.recommend(get_move("bw_calf_raise"), 12, 25,
+                              [[{"reps": 25, "rating": "good"}] * 2], KIT, harder=())
+    check("nothing harder left: keep adding reps", t.status == "reps" and t.goal > 25 - 1)
+
+    # A workout started away from home, with a kept swap.
+    clock, voice = Clock(), Voice()
+    r = Runner(voice, LiveTracker(voice), clock)
+    s = r.start("upper_a", "furniture")
+    check("start remembers the place", profile.load_profile()["location"] == "furniture")
+    check("session runs the bodyweight version",
+          s["plan"]["location"] == "furniture" and
+          r.st["plan"]["blocks"][1]["move"] == "pushup", f"{r.st['plan']['blocks'][1]['move']}")
+    while r.snapshot()["phase"] != "intro":
+        r.act("next")
+    opts = r.snapshot()["current"]["options"]
+    check("swap options exclude dumbbell moves away from home",
+          all(not get_move(o["id"]).weighted for v in opts.values() for o in v), f"{opts}")
+    r.act("swap", {"move": "incline_pushup", "keep": True})
+    swaps = profile.load_profile()["swaps"]
+    check("kept swap is saved for that place only",
+          swaps.get("furniture:ua.press") == "incline_pushup" and "ua.press" not in swaps, f"{swaps}")
+    prof = profile.load_profile()
+    check("home program ignores the away swap",
+          planner.resolve_move(planner.SLOTS["ua.press"], prof, "dumbbells").id == "db_bench_press")
+    r.act("end")
+    check("summary records the place", r.snapshot()["summary"]["location"] == "furniture")
+    r.act("close")
+    reset_data()
+
+
 # ------------------------------------------------------------- api
 
 def test_api() -> None:
@@ -369,8 +453,23 @@ def test_api() -> None:
     r = c.put("/api/profile", json={"bodyweight_kg": 500, "training_days": ["xyz"]}).get_json()
     check("profile input is clamped and validated",
           r["profile"]["bodyweight_kg"] == 200 and len(r["profile"]["training_days"]) == 5)
-    s = c.post("/api/session/start", json={"day": "lower_b"}).get_json()
+    t = c.get("/api/today?location=floor").get_json()
+    check("today previews another place", t["location"] == "floor" and
+          t["plan"]["location"] == "floor" and len(t["locations"]) == 3)
+    check("previewing does not change the saved place",
+          c.get("/api/profile").get_json()["profile"]["location"] == "dumbbells")
+    p = c.get("/api/plan?location=furniture").get_json()
+    check("plan shows another place's week",
+          p["location"] == "furniture" and p["current_location"] == "dumbbells")
+    lib = c.get("/api/library").get_json()["moves"]
+    check("library says where each move works",
+          next(m for m in lib if m["id"] == "goblet_squat")["places"] == ["dumbbells"] and
+          "floor" in next(m for m in lib if m["id"] == "door_row")["places"])
+    r = c.put("/api/profile", json={"location": "moon"}).get_json()
+    check("unknown place falls back to home", r["profile"]["location"] == "dumbbells")
+    s = c.post("/api/session/start", json={"day": "lower_b", "location": "floor"}).get_json()
     check("start a chosen day", s["plan"]["day_key"] == "lower_b")
+    check("start at a chosen place", s["plan"]["location"] == "floor")
     check("bad action rejected", c.post("/api/session/fly").status_code == 400)
     p = c.post("/api/pose", json={"t": 1.0, "ok": True, "px": [0] * 66, "world": [0] * 99,
                                   "vis": [1] * 33}).get_json()
@@ -412,6 +511,7 @@ def main() -> int:
     test_library_and_plan()
     test_runner()
     test_swap_and_skip()
+    test_locations()
     test_api()
     print()
     if FAILURES:

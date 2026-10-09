@@ -263,7 +263,7 @@ export class Player {
       return `<div class="ov-item"><img class="thumb" src="${thumbURL(m.slug)}" alt="">
         <div style="min-width:0"><b>${esc(m.name)}</b><div class="small muted">${esc(prescription(m, b.target, b.sets))} · ${esc(fmtWeight(m.mode, b.target.weight))}</div></div></div>`;
     }).join("");
-    return `<div class="kicker">Week ${s.plan.week} · ${esc(s.plan.focus)}</div>
+    return `<div class="kicker">Week ${s.plan.week} · ${esc(s.plan.focus)}${s.plan.location_label ? ` · ${esc(s.plan.location_label)}` : ""}</div>
       <h1>${esc(s.plan.title)}</h1>
       <div class="muted">About ${s.plan.estimate_min} minutes. ${esc(s.plan.phase_text)}</div>
       ${(s.plan.notes || []).map((n) => `<div class="phase-note">${esc(n)}</div>`).join("")}

@@ -77,7 +77,7 @@ register(
       muscles=("Chest", "Triceps", "Front shoulders", "Core"),
       purpose="Bodyweight chest and triceps work you can always progress: "
               "elevate your feet, add a deficit, or slow it down.",
-      tracker="pushup", view="side",
+      tracker="pushup", view="side", reps=(8, 15),
       steps=(
           "Hands slightly wider than your shoulders, fingers pointing forward.",
           "Step back into a straight line from head to heels. Squeeze your glutes.",
@@ -87,14 +87,15 @@ register(
       cues=("Body like a plank", "Chest to the floor, not your hips", "Elbows back, not out"),
       mistakes=("Hips sagging or piking up.", "Half reps — lower until your chest is close to the floor.",
                 "Head dropping forward."),
-      easier=("incline_pushup",), harder=("decline_pushup",), similar=("db_floor_press",),
+      easier=("incline_pushup",), harder=("decline_pushup", "deficit_pushup"),
+      similar=("db_floor_press",),
       rep_seconds=2.5),
 
     S("incline_pushup", "Incline Push-Up (hands on bench)", "incline-push-up-with-chair", "chest",
       muscles=("Chest", "Triceps", "Front shoulders"),
       purpose="An easier push-up. Raising your hands takes weight off so you "
               "can do full, clean reps.",
-      needs=("bench",), tracker="pushup", view="side",
+      needs=("bench",), tracker="pushup", view="side", reps=(8, 15),
       steps=(
           "Put your hands on the edge of the bench, slightly wider than shoulders.",
           "Walk your feet back until your body is a straight line.",
@@ -108,7 +109,7 @@ register(
       muscles=("Upper chest", "Front shoulders", "Triceps"),
       purpose="Feet up shifts more of your weight onto your arms and works the "
               "upper chest — the closest thing to an incline press without one.",
-      needs=("bench",), tracker="pushup", view="side",
+      needs=("bench",), tracker="pushup", view="side", reps=(6, 12),
       steps=(
           "Put your feet on the bench and your hands on the floor, slightly wider than shoulders.",
           "Brace into a straight line — do not let your hips sag.",
@@ -121,16 +122,17 @@ register(
 
     S("deficit_pushup", "Deficit Push-Up", "deep-push-up", "chest",
       muscles=("Chest", "Front shoulders", "Triceps"),
-      purpose="Hands on dumbbell handles so your chest can sink below hand "
+      purpose="Hands on raised supports so your chest can sink below hand "
               "level — a bigger stretch for the chest.",
-      tracker="pushup", view="side",
+      tracker="pushup", view="side", reps=(6, 12),
       steps=(
-          "Set two loaded dumbbells on the floor, shoulder-width apart, and grip the handles.",
+          "Set two loaded dumbbells (or two equal stacks of thick books) on the floor, shoulder-width apart.",
+          "Grip the handles, or put your hands flat on the books.",
           "Straight body from head to heels.",
           "Lower until your chest is below your hands, then press back up.",
       ),
       cues=("Sink deep, stay tight", "Control the bottom"),
-      mistakes=("Dumbbells rolling — use hex-shaped plates or put them against a wall.",),
+      mistakes=("Supports rolling or sliding — put them against a wall.",),
       easier=("decline_pushup",), rep_seconds=3.0),
 
     S("diamond_pushup", "Close-Grip Push-Up", "diamond-push-up", "arms",
@@ -142,7 +144,7 @@ register(
           "Keep your elbows close to your body as you lower.",
           "Push back up to straight arms.",
       ),
-      cues=("Elbows brush your ribs", "Body straight"),
+      cues=("Elbows brush your ribs", "Body straight"), reps=(8, 15),
       mistakes=("Elbows flaring out.", "Hips sagging."),
       easier=("pushup",), rep_seconds=2.5),
 
@@ -197,7 +199,7 @@ register(
       purpose="The fastest route to your first pull-up. Jump or step to the top "
               "and lower yourself as slowly as you can — you are stronger "
               "lowering than lifting.",
-      needs=("pullup_bar",), tracker="pullup", view="front", rep_seconds=8.0,
+      needs=("pullup_bar",), tracker="pullup", view="front", rep_seconds=8.0, reps=(3, 5),
       steps=(
           "Stand on a chair or jump so your chin is above the bar, palms facing away.",
           "Hold the top position for a second, chest up and shoulders down.",
@@ -214,7 +216,7 @@ register(
       muscles=("Lats", "Biceps", "Upper back"),
       purpose="Palms-facing-you grip brings the biceps in — usually the first "
               "full rep people get.",
-      needs=("pullup_bar",), tracker="pullup", view="front", rep_seconds=4.0,
+      needs=("pullup_bar",), tracker="pullup", view="front", rep_seconds=4.0, reps=(3, 8),
       steps=(
           "Grip the bar shoulder-width with palms facing you.",
           "Hang with straight arms, then pull your chest toward the bar.",
@@ -228,7 +230,7 @@ register(
     S("pullup", "Pull-Up", "pull-up", "back",
       muscles=("Lats", "Upper back", "Biceps"),
       purpose="The king of upper-body pulling exercises.",
-      needs=("pullup_bar",), tracker="pullup", view="front", rep_seconds=4.0,
+      needs=("pullup_bar",), tracker="pullup", view="front", rep_seconds=4.0, reps=(3, 8),
       steps=(
           "Grip the bar slightly wider than shoulders, palms facing away.",
           "From a dead hang, pull your elbows down toward your hips.",
@@ -340,7 +342,7 @@ register(
     S("pike_pushup", "Pike Push-Up", "pike-push-up", "shoulders",
       muscles=("Shoulders", "Triceps"),
       purpose="A bodyweight overhead press.",
-      tracker="pike", view="side",
+      tracker="pike", view="side", reps=(6, 12),
       steps=(
           "Start in a push-up position, then walk your feet in and lift your hips high into an upside-down V.",
           "Bend your elbows to lower the top of your head toward the floor in front of your hands.",
@@ -348,7 +350,7 @@ register(
       ),
       cues=("Hips high", "Head forms a triangle with your hands"),
       mistakes=("Letting your hips drop into a normal push-up.",),
-      similar=("db_seated_press",), rep_seconds=3.0),
+      harder=("elevated_pike",), similar=("db_seated_press",), rep_seconds=3.0),
 
     # ------------------------------------------------------------------- arms
     S("db_curl", "Dumbbell Biceps Curl", "dumbbell-standing-biceps-curl", "arms",
@@ -424,10 +426,10 @@ register(
 
     S("bench_dip", "Bench Dip", "triceps-dip-bench-leg", "arms",
       muscles=("Triceps", "Front shoulders"),
-      purpose="Bodyweight triceps work using the bench.",
-      needs=("bench",), tracker="triceps", view="side",
+      purpose="Bodyweight triceps work using the bench — or any sturdy chair.",
+      needs=("bench",), tracker="triceps", view="side", reps=(8, 15),
       steps=(
-          "Sit on the edge of the bench, hands beside your hips, fingers forward.",
+          "Sit on the edge of the bench (or a chair pushed against a wall), hands beside your hips, fingers forward.",
           "Slide your hips off the bench, knees bent, feet flat.",
           "Bend your elbows to lower your hips until your upper arms are about parallel to the floor.",
           "Press back up to straight arms.",
@@ -456,8 +458,9 @@ register(
 
     S("bw_squat", "Bodyweight Squat", "squat", "legs",
       muscles=("Quads", "Glutes"),
-      purpose="Learn the squat pattern without load.",
-      tracker="squat", view="side",
+      purpose="Learn the squat pattern without load. Without dumbbells, go "
+              "slow: three seconds down, a pause at the bottom.",
+      tracker="squat", view="side", reps=(15, 25),
       steps=(
           "Feet shoulder-width, arms forward for balance.",
           "Sit down and back until your thighs are parallel to the floor.",
@@ -465,12 +468,12 @@ register(
       ),
       cues=("Chest up", "Knees out"),
       mistakes=("Knees caving in.", "Heels lifting."),
-      harder=("goblet_squat",), rep_seconds=2.5),
+      harder=("goblet_squat", "pistol_box"), similar=("wall_sit",), rep_seconds=2.5),
 
     S("box_squat", "Box Squat to Bench", "bodyweight-bench-squat", "legs",
       muscles=("Quads", "Glutes"),
       purpose="The bench behind you sets the depth and gives you confidence.",
-      needs=("bench",), tracker="squat", view="side",
+      needs=("bench",), tracker="squat", view="side", reps=(12, 20),
       steps=(
           "Stand in front of the bench, feet shoulder-width.",
           "Sit back until you lightly touch the bench — do not flop down.",
@@ -478,7 +481,7 @@ register(
       ),
       cues=("Touch and go", "Chest up"),
       mistakes=("Dropping onto the bench and rocking up.",),
-      harder=("goblet_squat",), rep_seconds=3.0),
+      harder=("goblet_squat", "pistol_box"), rep_seconds=3.0),
 
     S("sumo_squat", "Dumbbell Sumo Squat", "dumbbell-goblet-sumo-squat", "legs",
       muscles=("Inner thighs", "Glutes", "Quads"),
@@ -651,7 +654,7 @@ register(
     S("glute_bridge", "Glute Bridge", "glute-bridge-two-legs-on-floor", "glutes",
       muscles=("Glutes", "Hamstrings"),
       purpose="Simple floor bridge — great for warming up the glutes.",
-      tracker="bridge", view="side",
+      tracker="bridge", view="side", reps=(12, 20),
       steps=(
           "Lie on your back, knees bent, feet flat and close to your hips.",
           "Press through your heels to lift your hips until your body is straight from shoulders to knees.",
@@ -664,7 +667,7 @@ register(
     S("sl_glute_bridge", "Single-Leg Glute Bridge", "glute-bridge-one-leg-on-floor-bent-knee", "glutes",
       muscles=("Glutes", "Hamstrings"),
       purpose="A one-leg bridge — much harder than it looks.",
-      tracker="bridge", view="side", per_side=True,
+      tracker="bridge", view="side", per_side=True, reps=(10, 15),
       steps=(
           "Lie on your back, one foot flat, the other knee pulled toward your chest.",
           "Drive through the planted heel to lift your hips level.",
@@ -678,7 +681,7 @@ register(
       muscles=("Glutes", "Hamstrings"),
       purpose="A hip thrust on one leg — doubles the load on each glute without more plates.",
       mode="bw", needs=("bench",), tracker="bridge", view="side", per_side=True,
-      rep_seconds=3.0,
+      rep_seconds=3.0, reps=(10, 15),
       steps=(
           "Upper back against the bench, one foot planted, the other leg lifted.",
           "Drive through the planted heel to lift your hips level with your shoulders.",
@@ -694,7 +697,7 @@ register(
       muscles=("Abs", "Deep core", "Shoulders"),
       purpose="Teaches you to brace your trunk — the skill that protects your "
               "back on every lift.",
-      hold=True, seconds=30, view="side",
+      hold=True, seconds=30, view="side", reps=(30, 60),
       steps=(
           "Forearms on the floor, elbows under your shoulders.",
           "Step your feet back into a straight line from head to heels.",
@@ -707,7 +710,7 @@ register(
     S("weighted_plank", "Weighted Plank", "weighted-front-plank", "core",
       muscles=("Abs", "Deep core"),
       purpose="Plank with a plate on your back once 60 seconds is easy.",
-      hold=True, seconds=40, view="side",
+      hold=True, seconds=40, view="side", needs=("dumbbells",),
       steps=(
           "Get into a forearm plank.",
           "Have a plate placed on your upper back, or slide it on carefully.",
@@ -721,7 +724,7 @@ register(
       muscles=("Obliques", "Deep core", "Glute med"),
       purpose="Builds the side of your core, which keeps your spine stable "
               "during single-leg work.",
-      hold=True, per_side=True, seconds=25, view="front",
+      hold=True, per_side=True, seconds=25, view="front", reps=(20, 40),
       steps=(
           "Lie on your side, forearm under your shoulder, legs straight and stacked.",
           "Lift your hips so your body is a straight line.",
@@ -734,7 +737,7 @@ register(
     S("side_plank_knee", "Side Plank (from knees)", "side-plank-beginner", "core",
       muscles=("Obliques", "Deep core"),
       purpose="An easier side plank, supported on your bottom knee.",
-      hold=True, per_side=True, seconds=25, view="front",
+      hold=True, per_side=True, seconds=25, view="front", reps=(20, 40),
       steps=(
           "Lie on your side with knees bent, forearm under your shoulder.",
           "Lift your hips so your body is straight from head to knees.",
@@ -748,7 +751,7 @@ register(
       muscles=("Deep core", "Abs"),
       purpose="Trains your core to stay still while your arms and legs move — "
               "exactly what it has to do when you lift.",
-      per_side=False, rep_seconds=4.0,
+      per_side=False, rep_seconds=4.0, reps=(8, 12),
       steps=(
           "Lie on your back, arms pointing at the ceiling, knees bent at 90 degrees over your hips.",
           "Press your lower back gently into the floor.",
@@ -762,7 +765,7 @@ register(
     S("hanging_knee_raise", "Hanging Knee Raise", "hanging-leg-tuck", "core",
       muscles=("Lower abs", "Hip flexors", "Grip"),
       purpose="Hanging core work that also builds the grip you need for pull-ups.",
-      needs=("pullup_bar",), tracker="knee_raise", view="side", rep_seconds=3.0,
+      needs=("pullup_bar",), tracker="knee_raise", view="side", rep_seconds=3.0, reps=(8, 12),
       steps=(
           "Hang from the bar with straight arms.",
           "Without swinging, bring your knees up toward your chest, curling your pelvis up.",
@@ -775,7 +778,7 @@ register(
     S("lying_leg_raise", "Lying Leg Raise", "lying-leg-raise", "core",
       muscles=("Lower abs", "Hip flexors"),
       purpose="An easier version of the hanging leg raise.",
-      rep_seconds=3.0,
+      rep_seconds=3.0, reps=(8, 15),
       steps=(
           "Lie on your back, hands under your hips, legs straight.",
           "Keep your lower back down and lift your legs until they point at the ceiling.",

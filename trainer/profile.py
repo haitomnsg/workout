@@ -1,8 +1,9 @@
 """Your settings, in one small JSON file you can read and edit.
 
 Everything the planner needs to know about you lives here: body stats for
-nutrition, which days you train, what your plates and bars weigh, and any
-exercise swaps you chose to keep. Missing keys fall back to the defaults
+nutrition, which days you train, what your plates and bars weigh, where you
+are training (and what kit those places have), and any exercise swaps you
+chose to keep. Missing keys fall back to the defaults
 below, so an old or hand-edited file never breaks the app.
 """
 from __future__ import annotations
@@ -13,6 +14,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from .equipment import Kit
+from .locations import DEFAULT_AWAY_KIT, DEFAULT_LOCATION, LOCATIONS
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 PROFILE_PATH = DATA_DIR / "profile.json"
@@ -44,9 +46,14 @@ DEFAULT_PROFILE: dict = {
         "bench": True,
         "pullup_bar": True,
     },
+    # Where you train: dumbbells | furniture | floor (see locations.py).
+    # Picked on the Today page and remembered until you change it.
+    "location": DEFAULT_LOCATION,
+    "away_kit": copy.deepcopy(DEFAULT_AWAY_KIT),
     "camera": {"model": "full", "mirror": True, "test_video": False},
     "voice": {"enabled": True},
     # Slot key -> exercise id, for swaps you chose to keep in future weeks.
+    # Swaps made away from the dumbbells are keyed "<place>:<slot>".
     "swaps": {},
 }
 
@@ -97,6 +104,12 @@ def update_profile(patch: dict) -> dict:
         except (TypeError, ValueError):
             continue
     profile["equipment"]["plates"] = plates or dict(DEFAULT_PROFILE["equipment"]["plates"])
+    if profile.get("location") not in LOCATIONS:
+        profile["location"] = DEFAULT_LOCATION
+    profile["away_kit"] = {
+        loc: {k: bool((profile.get("away_kit") or {}).get(loc, {}).get(k, v))
+              for k, v in kit_.items()}
+        for loc, kit_ in DEFAULT_AWAY_KIT.items()}
     return save_profile(profile)
 
 

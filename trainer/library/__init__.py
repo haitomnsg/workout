@@ -8,7 +8,7 @@ Each `Move` ties together what the rest of the app needs:
   * easier / harder / similar moves, so the app can offer a regression when
     something is too hard and a progression when it gets easy.
 
-Adding a move is one entry in strength.py or mobility.py.
+Adding a move is one entry in strength.py, bodyweight.py or mobility.py.
 """
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ class Move:
     muscles: tuple[str, ...] = ()
     purpose: str = ""               # one line: why this is in your program
     mode: str = "bw"                # db1 | db2 | bb | bw
-    needs: tuple[str, ...] = ()     # "bench", "pullup_bar"
+    needs: tuple[str, ...] = ()     # "bench", "table", "pullup_bar", "dumbbells"
     tracker: str | None = None      # trainer.exercises key that counts reps
     view: str = ""                  # side | front
     steps: tuple[str, ...] = ()
@@ -46,6 +46,7 @@ class Move:
     mistakes: tuple[str, ...] = ()
     per_side: bool = False
     hold: bool = False              # timed hold rather than reps
+    reps: tuple[int, int] | None = None  # own rep (or seconds) range; overrides the slot's
     start_kg: float | None = None   # first-session weight before any history
     increment: float = 0.025        # target load jump as a fraction
     rep_seconds: float = 3.0        # tempo, for session time estimates
@@ -93,8 +94,13 @@ def find(move_id: str) -> Move | None:
 
 
 def available(move: Move, equipment: dict) -> bool:
-    """False when the move needs kit you have told the app you lack."""
-    return all(equipment.get(n, True) for n in move.needs)
+    """False when the move needs kit you have told the app you lack.
+
+    Anything loaded (mode other than bodyweight) needs the dumbbells, so a
+    no-dumbbell place filters it out without every entry having to say so.
+    """
+    needs = (*move.needs, "dumbbells") if move.weighted else move.needs
+    return all(equipment.get(n, True) for n in needs)
 
 
 def options(move_id: str, equipment: dict | None = None) -> dict[str, list[Move]]:
@@ -109,4 +115,4 @@ def options(move_id: str, equipment: dict | None = None) -> dict[str, list[Move]
 
 
 # Registration happens on import.
-from . import mobility, strength  # noqa: E402,F401
+from . import mobility, strength, bodyweight  # noqa: E402,F401,I001

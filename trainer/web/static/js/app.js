@@ -26,9 +26,9 @@ async function route() {
 }
 window.addEventListener("hashchange", route);
 
-async function startWorkout(day) {
+async function startWorkout(day, location) {
   try {
-    const snap = await post("/api/session/start", day ? { day } : {});
+    const snap = await post("/api/session/start", { ...(day ? { day } : {}), ...(location ? { location } : {}) });
     player.open(snap);
   } catch (e) { toast(e.message); }
 }
@@ -51,7 +51,7 @@ async function today() {
   let action;
   if (active) {
     action = `<button class="btn primary big" id="resume">Resume ${esc(s.plan.title)}</button>
-      <span class="muted small">${s.paused ? "Paused" : "In progress"} · ${s.sets_logged} sets logged</span>`;
+      <span class="muted small">${s.paused ? "Paused" : "In progress"}${s.plan.location_label ? ` · ${esc(s.plan.location_label)}` : ""} · ${s.sets_logged} sets logged</span>`;
   } else if (doneToday) {
     action = `<span class="chip" style="color:var(--accent)">${icon("check").replace("<svg", '<svg style="width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:3"')} Done today</span>
       <button class="btn" id="start">${isRest ? "Do it again" : "Train again"}</button>`;
@@ -98,6 +98,8 @@ async function today() {
   }).join("");
 
   const notes = (p.notes || []).map((n) => `<div class="kv"><span>${esc(n)}</span></div>`).join("");
+  // Pick the place before starting; the plan below rebuilds for it.
+  const places = isRest || active ? "" : placePicker(d.locations, d.location, "Where are you training today?");
 
   page.innerHTML = `
     <div class="grid-2">
@@ -111,13 +113,14 @@ async function today() {
             ${isRest ? "" : `<span class="chip">${p.blocks.filter((b) => b.type === "exercise").length} exercises</span>`}
             <span class="chip">${esc({ intro: "Learning week", build: "Build phase", deload: "Deload week" }[p.phase])}</span>
           </div>
+          ${places}
           <div class="actions">${action}</div>
           <div class="phase-note"><span>${esc(p.phase_text)}</span></div>
         </div>
         <div class="week-strip">${week}</div>
         ${missedHTML}
         <div class="section-title"><h2>${isRest ? "Today's routine" : "Today's plan"}</h2>
-          <span class="muted small">${isRest ? "Gentle, 30-45 seconds per move" : "Weights update from your last session"}</span></div>
+          <span class="muted small">${isRest ? "Gentle, 30-45 seconds per move" : d.location === "dumbbells" ? "Weights update from your last session" : "Bodyweight version · reps update from your last session"}</span></div>
         <div class="card flush">${blocks}</div>
       </div>
       <aside class="stack">
@@ -142,9 +145,13 @@ async function today() {
       </aside>
     </div>`;
 
-  $("#start")?.addEventListener("click", () => startWorkout());
+  $("#start")?.addEventListener("click", () => startWorkout(null, d.location));
   $("#resume")?.addEventListener("click", resumeWorkout);
-  $$("[data-day]", page).forEach((b) => b.addEventListener("click", () => startWorkout(b.dataset.day)));
+  $$("[data-day]", page).forEach((b) => b.addEventListener("click", () => startWorkout(b.dataset.day, d.location)));
+  $$("[data-place]", page).forEach((b) => b.addEventListener("click", async () => {
+    if (b.dataset.place === d.location) return;
+    try { await put("/api/profile", { location: b.dataset.place }); await today(); } catch (e) { toast(e.message); }
+  }));
   $$("[data-toggle]", page).forEach((h) => h.addEventListener("click", () => {
     const items = h.nextElementSibling;
     items.classList.toggle("closed");
@@ -155,8 +162,20 @@ async function today() {
 
 // ============================================================== PLAN
 
+const PLACE_ICON = { dumbbells: "dumbbell", furniture: "chair", floor: "floor" };
+
+function placePicker(locations, current, title) {
+  return `<div class="place-pick"><div class="label-sm">${esc(title)}</div>
+    <div class="places" role="radiogroup" aria-label="${esc(title)}">${locations.map((l) => `<button class="place ${l.key === current ? "on" : ""}"
+      data-place="${l.key}" role="radio" aria-checked="${l.key === current}">
+      <span class="ico">${icon(PLACE_ICON[l.key])}</span>
+      <span class="txt"><b>${esc(l.label)}</b><span>${esc(l.blurb)}</span></span></button>`).join("")}</div></div>`;
+}
+
+let planPlace = null;
+
 async function plan() {
-  const d = await api("/api/plan");
+  const d = await api(`/api/plan${planPlace ? `?location=${planPlace}` : ""}`);
   const now = new Date();
   const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   const days = d.days.map((day) => {
@@ -178,6 +197,8 @@ async function plan() {
       <div class="eyebrow">Week ${d.week} · cycle week ${d.cycle_week} of ${d.cycle_len}</div>
       <h1>Upper / Lower, 5 days</h1>
       <div class="focus">${esc(d.phase_text)} ${d.phase !== "deload" ? `Next deload: week ${d.next_deload}.` : ""}</div>
+      ${placePicker(d.locations, d.location, "Show the week for")}
+      ${d.location !== "dumbbells" ? `<p class="small muted" style="margin-top:12px">Same days, same order, same set counts — bodyweight moves instead of dumbbells. Each move has its own rep range; when you top it on every set the app offers the harder variation.</p>` : ""}
     </div>
 
     <div class="section-title"><h2>This week</h2><span class="muted small">Upper and lower alternate, so nothing is trained hard two days in a row</span></div>
@@ -199,28 +220,29 @@ async function plan() {
       </ol>
     </div>
 
-    <div class="section-title"><h2>What your plates can make</h2><span class="muted small">${Object.entries(d.kit.plates).map(([w, n]) => `${n}×${w} kg`).join(" + ")} = ${d.kit.total} kg of plates</span></div>
+    ${d.location !== "dumbbells" ? "" : `<div class="section-title"><h2>What your plates can make</h2><span class="muted small">${Object.entries(d.kit.plates).map(([w, n]) => `${n}×${w} kg`).join(" + ")} = ${d.kit.total} kg of plates</span></div>
     <div class="card">
       <p class="muted small">Every recommended weight comes from these lists, so you are never told to lift something you can't load. Edit plates and bar weights in Settings.</p>
       ${ladders}
-    </div>`;
+    </div>`}`;
 
-  $$("[data-preview]", page).forEach((b) => b.addEventListener("click", () => previewDay(b.dataset.preview)));
+  $$("[data-preview]", page).forEach((b) => b.addEventListener("click", () => previewDay(b.dataset.preview, d.location)));
+  $$("[data-place]", page).forEach((b) => b.addEventListener("click", () => { planPlace = b.dataset.place; plan(); }));
 }
 
-async function previewDay(key) {
-  const p = await api(`/api/day/${key}`);
+async function previewDay(key, location) {
+  const p = await api(`/api/day/${key}?location=${location || ""}`);
   const rows = p.blocks.filter((b) => b.type === "exercise").map((b) => `<tr>
       <td><b>${esc(b.move.name)}</b><div class="small muted">${esc(b.target.reason)}</div></td>
       <td>${esc(prescription(b.move, b.target, b.sets))}</td><td class="n">${esc(b.move.weighted ? b.weight_text : "BW")}</td></tr>`).join("");
-  showModal(`<div class="sheet-head"><h3>${esc(p.title)} · ${esc(p.focus)}</h3><span class="spacer"></span>
+  showModal(`<div class="sheet-head"><div><h3>${esc(p.title)} · ${esc(p.focus)}</h3><div class="small muted">${esc(p.location_label)}</div></div><span class="spacer"></span>
       <button class="btn small primary" data-start="${key}">Do this workout now</button>
       <button class="icon-btn" data-close>${icon("close")}</button></div>
     <div style="padding:16px 20px 20px"><p class="muted small">About ${p.estimate_min} minutes including warm-up and cool-down.</p>
       <div class="table-wrap"><table class="t"><tr><th>Exercise</th><th>Sets</th><th style="text-align:right">Weight</th></tr>${rows}</table></div></div>`,
   (e) => {
     const b = e.target.closest("[data-start]");
-    if (b) { hideModal(); startWorkout(b.dataset.start); }
+    if (b) { hideModal(); startWorkout(b.dataset.start, p.location); }
   });
 }
 
@@ -243,7 +265,7 @@ async function progress() {
       <div class="ex-detail hidden" id="exd-${i}"></div>`;
   }).join("");
 
-  const recent = d.recent.map((s) => `<tr><td>${esc(fmtDate(s.date))}</td><td><b>${esc(s.title)}</b>${s.status === "partial" ? ' <span class="badge">ended early</span>' : ""}</td>
+  const recent = d.recent.map((s) => `<tr><td>${esc(fmtDate(s.date))}</td><td><b>${esc(s.title)}</b>${s.status === "partial" ? ' <span class="badge">ended early</span>' : ""}${s.location && s.location !== "dumbbells" ? ` <span class="badge">${s.location === "floor" ? "Floor only" : "No dumbbells"}</span>` : ""}</td>
       <td class="n">${s.total_sets}</td><td class="n">${Math.round(s.duration_min)} min</td><td class="n">${Math.round(s.volume_kg)} kg</td></tr>`).join("");
 
   page.innerHTML = `
@@ -280,7 +302,7 @@ async function progress() {
 
 // ============================================================== LIBRARY
 
-let libState = { q: "", group: "", kind: "strength" };
+let libState = { q: "", group: "", kind: "strength", place: "" };
 
 async function library() {
   const d = await api("/api/library");
@@ -297,6 +319,11 @@ async function library() {
       <button class="chip ${!libState.group ? "on" : ""}" data-group="">All muscles</button>
       ${groups.map((g) => `<button class="chip ${libState.group === g ? "on" : ""}" data-group="${g}">${esc(d.groups[g])}</button>`).join("")}
     </div>
+    <div class="filters">
+      <span class="small muted">Can do it with:</span>
+      <button class="chip ${!libState.place ? "on" : ""}" data-lplace="">Anything</button>
+      ${d.locations.map((l) => `<button class="chip ${libState.place === l.key ? "on" : ""}" data-lplace="${l.key}">${esc(l.short)}</button>`).join("")}
+    </div>
     <div class="grid-cards" id="lib"></div>`;
 
   const draw = () => {
@@ -304,6 +331,7 @@ async function library() {
     const list = d.moves.filter((m) =>
       (!libState.kind || m.kind === libState.kind) &&
       (!libState.group || m.group === libState.group) &&
+      (!libState.place || m.places.includes(libState.place)) &&
       (!q || m.name.toLowerCase().includes(q) || m.muscles.join(" ").toLowerCase().includes(q)));
     $("#lib").innerHTML = list.map((m) => `<button class="lib-card" data-id="${m.id}">
         <div class="img">${m.slug ? `<img src="${thumbURL(m.slug)}" alt="" loading="lazy">` : `<span class="muted">No image</span>`}</div>
@@ -315,6 +343,7 @@ async function library() {
   $("#q").addEventListener("input", (e) => { libState.q = e.target.value; draw(); });
   $$("[data-kind]", page).forEach((b) => b.addEventListener("click", () => { libState.kind = b.dataset.kind; libState.group = ""; library(); }));
   $$("[data-group]", page).forEach((b) => b.addEventListener("click", () => { libState.group = b.dataset.group; library(); }));
+  $$("[data-lplace]", page).forEach((b) => b.addEventListener("click", () => { libState.place = b.dataset.lplace; library(); }));
   $("#lib").addEventListener("click", (e) => { const c = e.target.closest("[data-id]"); if (c) openMove(c.dataset.id); });
 }
 
@@ -421,6 +450,12 @@ async function settings() {
       </div>
     </div>
 
+    <div class="section-title"><h2>Training without dumbbells</h2><span class="muted small">What you can count on at each place — the bodyweight program uses what is there</span></div>
+    <div class="card"><div class="form-grid">${d.locations.filter((l) => l.key !== "dumbbells").map((l) => `<div>
+        <div class="row" style="gap:10px;margin-bottom:4px"><span class="place-ico">${icon(PLACE_ICON[l.key])}</span><b>${esc(l.label)}</b></div>
+        ${Object.entries(d.kit_labels).map(([k, label]) => `<div class="toggle-row"><div class="small">${esc(label)}</div>${sw(`away-${l.key}-${k}`, p.away_kit[l.key][k])}</div>`).join("")}
+      </div>`).join("")}</div></div>
+
     <div class="section-title"><h2>Camera and voice</h2></div>
     <div class="card">
       <div class="toggle-row"><div><b>Voice coach</b><div class="small muted">Spoken cues, rep counts and rest countdowns</div></div>${sw("voice", p.voice.enabled)}</div>
@@ -446,6 +481,8 @@ async function settings() {
       training_days: $$("[data-day].on", page).map((b) => b.dataset.day),
       equipment: { rod_kg: +$("#rod").value, connector_kg: +$("#connector").value, collar_kg: +$("#collar").value,
         plates: plateMap, bench: $("#bench").checked, pullup_bar: $("#bar").checked },
+      away_kit: Object.fromEntries(Object.entries(p.away_kit).map(([loc, kit]) =>
+        [loc, Object.fromEntries(Object.keys(kit).map((k) => [k, $(`#away-${loc}-${k}`).checked]))])),
       camera: { model: $("#model").value, mirror: $("#mirror").checked, test_video: $("#testvid").checked },
       voice: { enabled: $("#voice").checked },
     };

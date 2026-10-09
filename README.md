@@ -48,6 +48,20 @@ Five days a week, Sunday to Thursday, with the upper and lower body alternating:
 |---|---|---|---|---|---|---|
 | Upper A | Lower A | Upper B | Lower B | Arms, Shoulders & Core | Mobility A | Mobility B |
 
+**Where you train.** Before you start, pick a place on the Today page:
+
+| Place | What it uses |
+|---|---|
+| **Home, with dumbbells** | the full program: dumbbells, barbell, bench, pull-up bar |
+| **No dumbbells** | bodyweight, with a sturdy chair (split squats, dips, step-ups) and a table to row under |
+| **Just the floor** | bodyweight with only a floor, a wall, a door and a towel |
+
+The days, order and set counts stay the same. Only the moves change, and each bodyweight
+move has its own rep range. Top the range on every set and the app offers the next harder
+variation, but only one you can do at that place. Swaps you keep are saved per place, and the
+Plan page shows the week for each place. Settings → *Training without dumbbells* lists what
+each away place has.
+
 Week 1 is a learning week with 2 sets and light weights. Weeks 2-7 build, and week 8 is a
 deload. Then the cycle repeats. Full reasoning: [plan/app-redesign.md](plan/app-redesign.md).
 

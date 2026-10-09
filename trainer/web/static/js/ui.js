@@ -86,6 +86,9 @@ const ICON_PATHS = {
   play: '<path d="M6 4l14 8-14 8z"/>',
   full: '<path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/>',
   check: '<path d="M20 6 9 17l-5-5"/>',
+  dumbbell: '<path d="M6.5 6v12M3.5 9v6M17.5 6v12M20.5 9v6M6.5 12h11"/>',
+  chair: '<path d="M7 3h10v8H7zM5 11h14v3H5zM7 14v7M17 14v7"/>',
+  floor: '<path d="M2 20h20"/><circle cx="19" cy="9.5" r="1.6"/><path d="M4 16.5l9-3.5 4 .5M13 13l1 3.5"/>',
 };
 export const icon = (name) => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON_PATHS[name] || ""}</svg>`;
 

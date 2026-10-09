@@ -110,10 +110,16 @@ def starting_weight(kit: eq.Kit, move: Move) -> float | None:
 
 
 def recommend(move: Move, lo: int, hi: int, history: list[list[dict]],
-              kit: eq.Kit) -> Target:
-    """Next session's target for one move, from its past working sessions."""
+              kit: eq.Kit, harder: tuple[str, ...] | None = None) -> Target:
+    """Next session's target for one move, from its past working sessions.
+
+    `harder` is the harder variations you can actually do where you are
+    training (the move's own list, filtered to the kit at hand). With none
+    left, a bodyweight move keeps progressing by reps instead.
+    """
+    harder = move.harder if harder is None else harder
     if move.hold:
-        return _recommend_hold(move, lo, hi, history)
+        return _recommend_hold(move, lo, hi, history, harder)
 
     if not history:
         w = starting_weight(kit, move)
@@ -150,18 +156,18 @@ def recommend(move: Move, lo: int, hi: int, history: list[list[dict]],
 
     # ---- bodyweight moves: reps, then a harder variation -------------------
     if not move.weighted:
-        cap = hi if move.harder else MAX_BW_REPS
-        if all_top and not hard and move.harder:
+        cap = hi if harder else MAX_BW_REPS
+        if all_top and not hard and harder:
             return T(None, hi, "graduate",
                      f"You hit {hi}+ on every set. Ready for a harder variation — "
                      f"switch when you are, or keep adding reps here.",
-                     graduate=move.harder[0])
+                     graduate=harder[0])
         if below and (failed or max(reps) < lo - 2):
             easier = f" If it stays out of reach, switch to the easier variation." \
                 if move.easier else ""
             return T(None, lo, "hold", f"Aim for at least {lo} clean reps per set.{easier}")
         goal = min(max(lo, min(reps) + 1), max(cap, hi))
-        hi_out = hi if move.harder else max(hi, min(MAX_BW_REPS, max(reps) + 1))
+        hi_out = hi if harder else max(hi, min(MAX_BW_REPS, max(reps) + 1))
         return T(None, goal, "reps", f"Beat last time: aim for {goal} reps per set.",
                  hi_out=hi_out)
 
@@ -226,7 +232,8 @@ def _stalled(history: list[list[dict]], w: float | None) -> bool:
     return totals[2] <= totals[0] and struggled
 
 
-def _recommend_hold(move: Move, lo: int, hi: int, history: list[list[dict]]) -> Target:
+def _recommend_hold(move: Move, lo: int, hi: int, history: list[list[dict]],
+                    harder: tuple[str, ...]) -> Target:
     if not history:
         return Target(move.id, None, lo, hi, lo, "new",
                       f"First time. Hold {lo} seconds with perfect form.", hold=True)
@@ -239,12 +246,12 @@ def _recommend_hold(move: Move, lo: int, hi: int, history: list[list[dict]]) -> 
         return Target(move.id, None, lo, hi, goal, "hold",
                       f"Hold {goal} seconds on every set before adding time.",
                       last=last_txt, hold=True)
-    top = max(hi, MAX_HOLD if not move.harder else hi)
+    top = max(hi, MAX_HOLD if not harder else hi)
     goal = min(min(secs) + HOLD_STEP, top)
-    if min(secs) >= hi and move.harder and not any(r == "hard" for r in ratings):
+    if min(secs) >= hi and harder and not any(r == "hard" for r in ratings):
         return Target(move.id, None, lo, hi, hi, "graduate",
                       f"{hi} seconds is comfortable. Ready for a harder variation.",
-                      last=last_txt, graduate_to=move.harder[0], hold=True)
+                      last=last_txt, graduate_to=harder[0], hold=True)
     return Target(move.id, None, lo, max(hi, goal), goal, "reps",
                   f"Add {HOLD_STEP} seconds: hold {goal}s.", last=last_txt, hold=True)
 
